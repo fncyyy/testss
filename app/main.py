@@ -42,7 +42,7 @@ if strategy_type == "AI Text Strategy":
     api_key = st.sidebar.text_input("Gemini API Key", type="password")
 
     # Model Selection
-    model_options = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-3-flash", "gemini-3-pro-preview"]
+    model_options = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"]
     model_name = st.sidebar.selectbox("Model Name", model_options, index=0, help="Select the Gemini model to use.")
 
     # Optimization
