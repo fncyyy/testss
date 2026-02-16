@@ -42,22 +42,22 @@ if strategy_type == "AI Text Strategy":
     api_key = st.sidebar.text_input("Gemini API Key", type="password")
 
     # Model Selection
-    # Defaulting to gemini-2.0-flash as it is fast, reliable, and widely available. Users can change this.
-    model_name = st.sidebar.text_input("Model Name", value="gemini-2.0-flash", help="e.g., gemini-2.0-flash, gemini-3-pro-preview, gemini-2.5-flash")
+    model_options = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-3-flash", "gemini-3-pro-preview"]
+    model_name = st.sidebar.selectbox("Model Name", model_options, index=0, help="Select the Gemini model to use.")
 
     # Optimization
     st.sidebar.markdown("---")
     st.sidebar.subheader("Performance Optimization")
     skip_period = st.sidebar.number_input("Process Every N Candles", min_value=1, value=1, help="Skip N-1 candles to speed up AI backtesting. E.g., 5 means process every 5th candle.")
-    max_candles = st.sidebar.number_input("Max Recent Candles to Test", min_value=10, value=100, step=10, help="Limit backtest to the most recent N candles to save time/API costs.")
+    max_candles = st.sidebar.number_input("Max Recent Candles to Test", min_value=10, max_value=1000, value=100, step=10, help="Limit backtest to the most recent N candles to save time/API costs.")
 
     default_prompt = """Futures/indexes refined
 treat 1hr/4hr as our bias
 mark out 1hr 4hr session highs and lows
-5min confirmation confluence ( bos, ifvg, 79% extension or smt)
+5min confirmation confluence ( bos, ifvg, 79% extension)
 IF #1 happens before mkt open wait for 5min liq sweep
-5min continuation conf ( eq fvg if 2b  happens smt)
-1min conf conf ( bos ifvg 79% ext or smt)
+5min continuation conf ( eq fvg if 2b  happens)
+1min conf conf ( bos ifvg 79% ext)
 Enter
 Target draws of liq in our direction"""
 
@@ -72,7 +72,7 @@ commission = st.sidebar.number_input("Commission per Trade", value=2.0)
 st.sidebar.subheader("Visualization")
 active_scan = st.sidebar.checkbox("Active Chart Scan", value=True, help="Update the chart in real-time during backtest.")
 scan_window = st.sidebar.slider("Scan Window (Candles)", 50, 500, 100, help="Number of recent candles to show during active scan.")
-update_frequency = st.sidebar.slider("Update Frequency (Steps)", 1, 50, 5, help="Update chart every N steps.")
+update_frequency = st.sidebar.slider("Update Frequency (Steps)", 1, 50, 1, help="Update chart every N steps.")
 
 # Main Execution Button
 if st.sidebar.button("Run Simulation"):

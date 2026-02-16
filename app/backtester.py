@@ -72,7 +72,26 @@ class Backtester:
             # 3. Strategy Decision (OPTIMIZED: Only run every N steps)
             signal = None
             if i % strategy_interval == 0:
+                # Enforce Trading Hours (No NEW entries outside hours)
+                is_trading_hours = True
+                if hasattr(strategy, 'check_trading_hours'):
+                    is_trading_hours = strategy.check_trading_hours(current_idx)
+
+                # Call strategy
+                # Note: Strategy itself might want to know if it's outside trading hours to close positions or manage logic.
+                # However, for this requirement: "only time the bot can place a trade".
+                # We will let the strategy decide, but filter the 'action' if it's an ENTRY and outside hours.
+
+                # Pass is_trading_hours to strategy? No, next() signature is fixed.
+                # Just call strategy.
                 signal = strategy.next(current_idx, current_row, self.portfolio)
+
+                if signal and not is_trading_hours:
+                    # Filter ENTRY actions (buy/sell)
+                    action = signal.get('action')
+                    if action in ['buy', 'sell']:
+                        signal['action'] = 'hold'
+                        signal['reason'] = f"Outside Trading Hours (09:30-16:30 NY). Ignored: {signal.get('reason', '')}"
 
             # 4. Execute Trade
             if signal:

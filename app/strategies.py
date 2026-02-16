@@ -37,6 +37,28 @@ class Strategy(ABC):
     def log(self, message: str):
         self.logs.append(message)
 
+    def check_trading_hours(self, current_time: pd.Timestamp) -> bool:
+        """
+        Checks if current time is within trading hours (09:30 - 16:30 NY Time).
+        """
+        ny_tz = pytz.timezone('America/New_York')
+        if current_time.tzinfo is None:
+            # Assume UTC if naive, convert to NY
+            now_utc = current_time.replace(tzinfo=pytz.utc)
+            now_ny = now_utc.astimezone(ny_tz)
+        else:
+            now_ny = current_time.astimezone(ny_tz)
+
+        # Trading Hours: 09:30 - 16:30
+        start_time = dt_time(9, 30)
+        end_time = dt_time(16, 30)
+
+        # Check if weekday (0-4)
+        if now_ny.weekday() >= 5:
+            return False
+
+        return start_time <= now_ny.time() <= end_time
+
 class VWAPTrendStrategy(Strategy):
     """
     Adaptive Top-Down Market Structure & VWAP Strategy.
@@ -205,11 +227,8 @@ class AITextStrategy(Strategy):
 
             time_str = now_ny.strftime('%Y-%m-%d %H:%M:%S %Z')
 
-            # Determine Market Status (RTH: 09:30 - 16:15 for Futures often, or 16:00 for Equities)
-            # NQ futures trade almost 24/7, but "Market Open" strategy usually implies 09:30 AM NY.
-            mkt_open = dt_time(9, 30)
-            mkt_close = dt_time(16, 0) # Equities close, often used as reference
-            is_rth = mkt_open <= now_ny.time() <= mkt_close
+            # Determine Market Status
+            is_rth = self.check_trading_hours(current_time)
             market_status = "OPEN (RTH)" if is_rth else "CLOSED/EXTENDED HOURS"
 
             htf_str = ""
@@ -232,12 +251,18 @@ class AITextStrategy(Strategy):
             prompt = f"""
             You are an automated trading bot. Analyze the market data below based STRICTLY on the following strategy logic.
 
+            IMPORTANT:
+            1. You assume the chart has 1:1 real liquidity and movements with real markets.
+            2. Do not spend minutes wondering. Process this single candle and context immediately. Keep thoughts concise.
+            3. Strictly follow the strategy logic below. Use ICT concepts as defined.
+            4. Do not check for SMT divergence unless you can see multiple ticker data (currently only one is provided).
+
             STRATEGY LOGIC:
             {self.strategy_text}
 
             MARKET DATA:
             Current Time: {time_str}
-            Market Status: {market_status}
+            Market Status: {market_status} (Trading is ONLY allowed if OPEN)
 
             Session Context (Last ~2.5h):
             High: {day_high}
