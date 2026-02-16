@@ -36,6 +36,7 @@ strategy_type = st.sidebar.selectbox("Strategy", ["VWAP Trend (Default)", "AI Te
 
 strategy_text = ""
 api_key = ""
+max_candles = 1000 # Default
 
 if strategy_type == "AI Text Strategy":
     st.sidebar.subheader("AI Configuration")
