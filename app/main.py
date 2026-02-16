@@ -170,7 +170,21 @@ if st.sidebar.button("Run Simulation"):
                 log_container = st.empty()
                 chart_placeholder = st.empty()
 
-                def progress_callback(current_step, total_steps, current_time, last_reason):
+                # Store visualization confluences
+                confluence_history = []
+
+                def progress_callback(current_step, total_steps, current_time, signal):
+                    # Check if signal has reason/action
+                    last_reason = "Hold/No Signal"
+                    if signal and isinstance(signal, dict):
+                        last_reason = signal.get('reason', "Hold/No Signal")
+
+                        # Store confluences if present
+                        if 'confluences' in signal and isinstance(signal['confluences'], list):
+                            for c in signal['confluences']:
+                                c['time'] = current_time # Tag with current time
+                                confluence_history.append(c)
+
                     is_signal = last_reason and last_reason != "Hold/No Signal"
 
                     # Update Progress Bar
@@ -202,12 +216,35 @@ if st.sidebar.button("Run Simulation"):
                                 name='Price'
                             ))
 
+                            # Confluences
+                            window_start_time = scan_df.index[0]
+                            window_end_time = scan_df.index[-1]
+
+                            for c in confluence_history:
+                                # Show confluences created within the window OR persistently if they are 'levels'
+                                # For simplicity, let's show all that were created within the visible time window.
+                                # Or better: show recently created ones?
+                                # Let's show those created within the window range.
+                                if c.get('time') and c['time'] >= window_start_time and c['time'] <= window_end_time:
+                                    color = 'blue'
+                                    if 'bullish' in str(c.get('label', '')).lower(): color = 'green'
+                                    if 'bearish' in str(c.get('label', '')).lower(): color = 'red'
+
+                                    if c.get('type') == 'line' and 'price' in c:
+                                        fig_scan.add_hline(y=c['price'], line_dash="dash", line_color=color, annotation_text=c.get('label', 'Level'))
+
+                                    elif c.get('type') == 'zone' and 'top' in c and 'bottom' in c:
+                                        fig_scan.add_shape(type="rect",
+                                            x0=c['time'], x1=window_end_time, # Extend to right?
+                                            y0=c['bottom'], y1=c['top'],
+                                            line=dict(color=color, width=1),
+                                            fillcolor=color, opacity=0.2
+                                        )
+                                        # Annotation?
+                                        # fig_scan.add_annotation(x=c['time'], y=c['top'], text=c.get('label', 'Zone'), showarrow=False)
+
                             # Trades (Only those within the scan window)
                             if bt.trades:
-                                # Filter trades that happened within the scan window time range
-                                window_start_time = scan_df.index[0]
-                                window_end_time = scan_df.index[-1]
-
                                 # Buys
                                 buys = [t for t in bt.trades if t.side == 'long' and t.entry_time >= window_start_time and t.entry_time <= window_end_time]
                                 if buys:

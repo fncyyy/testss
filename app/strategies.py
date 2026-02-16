@@ -279,8 +279,22 @@ class AITextStrategy(Strategy):
             INSTRUCTIONS:
             - Decide the action: 'buy', 'sell', 'close', or 'hold'.
             - Return ONLY valid JSON. No Markdown.
-            - Format: {{"action": "...", "quantity": 1, "sl": float, "tp": float, "reason": "short explanation"}}
+            - Format:
+            {{
+                "action": "...",
+                "quantity": 1,
+                "sl": float,
+                "tp": float,
+                "reason": "short explanation",
+                "confluences": [
+                    {{"type": "line", "label": "BOS", "price": 12345}},
+                    {{"type": "zone", "label": "FVG", "top": 12350, "bottom": 12340}}
+                ]
+            }}
             - The "reason" field is mandatory. Explain why you are taking the action or holding based on the strategy.
+            - The "confluences" field is optional but highly recommended to visualize what you see (BOS, FVG, Liquidity Levels).
+              - Use "line" for specific price levels.
+              - Use "zone" for ranges (like FVG).
             - If 'hold', return {{"action": "hold", "reason": "..."}}.
             - If the strategy conditions are not met, return {{"action": "hold", "reason": "Conditions not met..."}}.
             """

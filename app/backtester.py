@@ -99,14 +99,12 @@ class Backtester:
 
             # Progress Update
             if progress_callback:
-                # Get reasoning if available
-                reason = signal.get('reason') if signal else "Hold/No Signal"
-                # If AI strategy, it might have stored reason even if no signal? No, usually in signal.
-                # If strategy has 'last_response', maybe we can parse?
-                # But for speed, just pass signal info.
+                # Pass the full signal to callback (including confluences)
+                # If no signal, pass empty dict or None?
+                # Callback expects (step, total, time, signal_info)
+                # Let's pass the signal dict itself if it exists, else None.
 
-                # Update every iteration or every N
-                progress_callback(i + 1, total_steps, current_idx, reason)
+                progress_callback(i + 1, total_steps, current_idx, signal)
 
         # Close all positions at the end
         if self.portfolio['position'] != 0:
