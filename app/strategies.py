@@ -184,7 +184,11 @@ class AITextStrategy(Strategy):
         if HAS_GEMINI and self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel(self.model_name)
+                generation_config = {
+                    "response_mime_type": "application/json",
+                    "max_output_tokens": 250
+                }
+                self.model = genai.GenerativeModel(self.model_name, generation_config=generation_config)
             except Exception as e:
                 self.log(f"Error configuring Gemini API: {e}")
                 self.model = None
@@ -208,11 +212,12 @@ class AITextStrategy(Strategy):
             # 5m: Last 30 candles (~2.5 hours)
             start_idx = max(0, loc - 30)
             recent_data = self.data.iloc[start_idx:loc+1]
-            recent_str = recent_data[['open', 'high', 'low', 'close', 'volume']].to_string()
+            # Optimize: use CSV for fewer tokens
+            recent_str = recent_data[['open', 'high', 'low', 'close', 'volume']].round(2).to_csv(header=True)
 
             # Calculate Session/Day High/Low for context
-            day_high = recent_data['high'].max()
-            day_low = recent_data['low'].min()
+            day_high = round(recent_data['high'].max(), 2)
+            day_low = round(recent_data['low'].min(), 2)
 
             # Timezone Context (NY Time)
             ny_tz = pytz.timezone('America/New_York')
@@ -244,59 +249,43 @@ class AITextStrategy(Strategy):
                         if isinstance(h_loc, slice): h_loc = h_loc.stop - 1
                         start_h = max(0, h_loc - 4)
                         htf_data = df_1h.iloc[start_h:h_loc+1]
-                        htf_str = htf_data[['open', 'high', 'low', 'close', 'volume']].to_string()
+                        # Optimize: use CSV for fewer tokens
+                        htf_str = htf_data[['open', 'high', 'low', 'close', 'volume']].round(2).to_csv(header=True)
                     except KeyError:
                         pass
 
             prompt = f"""
-            You are an automated trading bot. Analyze the market data below based STRICTLY on the following strategy logic.
-
-            IMPORTANT:
-            1. You assume the chart has 1:1 real liquidity and movements with real markets.
-            2. Do not spend minutes wondering. Process this single candle and context immediately. Keep thoughts concise.
-            3. Strictly follow the strategy logic below. Use ICT concepts as defined.
-            4. Do not check for SMT divergence unless you can see multiple ticker data (currently only one is provided).
-
-            STRATEGY LOGIC:
+            STRATEGY_LOGIC:
             {self.strategy_text}
 
-            MARKET DATA:
-            Current Time: {time_str}
-            Market Status: {market_status} (Trading is ONLY allowed if OPEN)
+            MARKET_DATA:
+            Time: {time_str}
+            Status: {market_status}
+            Session_High: {day_high}
+            Session_Low: {day_low}
+            Position: {portfolio['position']}
 
-            Session Context (Last ~2.5h):
-            High: {day_high}
-            Low: {day_low}
-
-            Recent 5m Data (Last 30 candles):
+            RECENT_DATA_CSV:
             {recent_str}
 
-            Recent 1h Data (Last 5 closed candles):
+            HTF_DATA_CSV:
             {htf_str}
 
-            Current Position: {portfolio['position']} (Positive=Long, Negative=Short, 0=Flat)
+            TASK:
+            Analyze the data based on the strategy logic. Return valid JSON only.
 
-            INSTRUCTIONS:
-            - Decide the action: 'buy', 'sell', 'close', or 'hold'.
-            - Return ONLY valid JSON. No Markdown.
-            - Format:
+            JSON Schema:
             {{
-                "action": "...",
+                "action": "buy" | "sell" | "close" | "hold",
                 "quantity": 1,
                 "sl": float,
                 "tp": float,
-                "reason": "short explanation",
+                "reason": "string",
                 "confluences": [
-                    {{"type": "line", "label": "BOS", "price": 12345}},
-                    {{"type": "zone", "label": "FVG", "top": 12350, "bottom": 12340}}
+                    {{"type": "line", "label": "string", "price": float}},
+                    {{"type": "zone", "label": "string", "top": float, "bottom": float}}
                 ]
             }}
-            - The "reason" field is mandatory. Explain why you are taking the action or holding based on the strategy.
-            - The "confluences" field is optional but highly recommended to visualize what you see (BOS, FVG, Liquidity Levels).
-              - Use "line" for specific price levels.
-              - Use "zone" for ranges (like FVG).
-            - If 'hold', return {{"action": "hold", "reason": "..."}}.
-            - If the strategy conditions are not met, return {{"action": "hold", "reason": "Conditions not met..."}}.
             """
 
             response = self.model.generate_content(prompt)
