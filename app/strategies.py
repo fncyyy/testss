@@ -354,6 +354,75 @@ class ICTStrategy(Strategy):
             # Calculating rolling on the full series is fine as long as we access only up to current index.
             df_4h['4h_SMA_20'] = df_4h['close'].rolling(20).mean()
 
+    def find_recent_fvg(self, current_time: pd.Timestamp, lookback: int = 10, bias: str = "neutral") -> Optional[Dict]:
+        """
+        Scans last `lookback` candles for an UNMITIGATED FVG aligned with bias.
+        Returns the FVG dict if current price is interacting with it, else None.
+        """
+        loc = self.data.index.get_loc(current_time)
+        if isinstance(loc, slice): loc = loc.stop - 1
+
+        if loc < lookback: return None
+
+        # Iterate backwards from current candle (i)
+        # We look for FVG formed at i-k.
+        # FVG is formed by candles k-2, k-1, k.
+        # We need to check if it's still valid (not filled).
+
+        current_row = self.data.iloc[loc]
+        current_low = current_row['low']
+        current_high = current_row['high']
+
+        found_fvg = None
+
+        # Scan for FVG formation
+        for i in range(loc - 1, loc - lookback, -1):
+            # i is the potential 3rd candle of the FVG pattern (the confirmation candle)
+            # Pattern: i-2 (1), i-1 (2, displacement), i (3)
+
+            c1 = self.data.iloc[i-2]
+            c2 = self.data.iloc[i-1] # Displacement candle
+            c3 = self.data.iloc[i]
+
+            # Calculate Body Size for Displacement Check
+            body_size = abs(c2['close'] - c2['open'])
+            avg_body = abs(self.data['close'].iloc[i-6:i-1] - self.data['open'].iloc[i-6:i-1]).mean()
+
+            # Displacement Filter: Body must be > 1.0x Avg (loose filter)
+            is_displacement = body_size > avg_body
+
+            if bias == "bullish":
+                # Bullish FVG: C2 Green. Gap between C1 High and C3 Low.
+                if c2['close'] > c2['open'] and is_displacement:
+                    fvg_top = c3['low']
+                    fvg_bottom = c1['high']
+
+                    if fvg_top > fvg_bottom: # Valid Gap
+                        # Check if current price (at loc) is inside or touched this zone
+                        # Ideally, we want to buy when price dips into [fvg_bottom, fvg_top]
+                        if current_low <= fvg_top and current_high >= fvg_bottom:
+                            return {
+                                'type': 'zone', 'label': 'Bullish FVG',
+                                'top': fvg_top, 'bottom': fvg_bottom,
+                                'time': c2.name
+                            }
+
+            elif bias == "bearish":
+                # Bearish FVG: C2 Red. Gap between C1 Low and C3 High.
+                if c2['close'] < c2['open'] and is_displacement:
+                    fvg_top = c1['low']
+                    fvg_bottom = c3['high']
+
+                    if fvg_top > fvg_bottom: # Valid Gap
+                         # Check if current price (at loc) is inside or touched this zone
+                        if current_high >= fvg_bottom and current_low <= fvg_top:
+                            return {
+                                'type': 'zone', 'label': 'Bearish FVG',
+                                'top': fvg_top, 'bottom': fvg_bottom,
+                                'time': c2.name
+                            }
+        return None
+
     def next(self, current_time: pd.Timestamp, current_row: pd.Series, portfolio: Dict[str, float]) -> Optional[Dict[str, Any]]:
         # 1. Determine Bias (4H)
         bias = "neutral"
@@ -372,75 +441,43 @@ class ICTStrategy(Strategy):
                     else:
                         bias = "bearish"
 
-        # 2. Check 5m FVG and BOS (Recent 3 candles)
-        # We need recent history from self.data
-        loc = self.data.index.get_loc(current_time)
-        if isinstance(loc, slice): loc = loc.stop - 1
-
-        if loc < 3: return None
-
-        # Look at last 3 completed candles (before current)?
-        # Actually, let's look at the pattern formed by [i-2, i-1, i]
-        # Current row is 'i'.
-        # FVG is usually gap between i-2 and i.
-
-        candle_i = current_row # Current closing candle
-        candle_i_1 = self.data.iloc[loc-1]
-        candle_i_2 = self.data.iloc[loc-2]
-
         signal = None
-        price = candle_i['close']
+        price = current_row['close']
 
-        # FVG Detection
-        # Bullish FVG: Candle i-1 is UP. Gap between High(i-2) and Low(i).
-        # Wait, usually FVG is detected AFTER candle i-1 closes.
-        # So candle i-1 is the 'gap creator'.
-        # At close of candle i (current), we check if i-1 created an FVG? No.
-        # FVG is formed by i-2, i-1, i.
-        # Let's say current is i.
-        # i-1 was the big move.
-        # We check gap between i-2 and i (current close/low).
-        # Actually, standard ICT definition:
-        # Bullish FVG: Candle 2 (middle) is large green. Low(3) > High(1).
-        # Here we are at Candle 3 (i).
-        # Candle 2 is i-1. Candle 1 is i-2.
-
-        is_fvg_bullish = False
-        is_fvg_bearish = False
-
-        # Check if i-1 was Bullish
-        if candle_i_1['close'] > candle_i_1['open']:
-            # Check gap
-            if candle_i['low'] > candle_i_2['high']:
-                # There is a gap between 1 (i-2) High and 3 (i) Low.
-                # However, this means price hasn't filled it yet.
-                # Usually we enter ON the retest.
-                # Here we are simulating. If gap exists, we might want to enter limit?
-                # Simplified: If FVG exists and bias aligns, enter.
-                is_fvg_bullish = True
-
-        # Check if i-1 was Bearish
-        if candle_i_1['close'] < candle_i_1['open']:
-            if candle_i['high'] < candle_i_2['low']:
-                is_fvg_bearish = True
+        # 2. Check 5m FVG (Retracement Entry)
+        fvg = self.find_recent_fvg(current_time, lookback=15, bias=bias)
 
         if bias == "bullish":
             if portfolio['position'] <= 0:
-                if is_fvg_bullish:
-                    # SL below i-1 Low
-                    sl = candle_i_1['low']
+                if fvg:
+                    # SL below FVG bottom
+                    sl = fvg['bottom']
                     if sl >= price: sl = price * 0.995 # Fallback
                     tp = price + (price - sl) * 2 # 2R
-                    signal = {'action': 'buy', 'quantity': 1, 'sl': sl, 'tp': tp, 'reason': 'Bullish Bias + 5m FVG'}
+                    signal = {
+                        'action': 'buy',
+                        'quantity': 1,
+                        'sl': sl,
+                        'tp': tp,
+                        'reason': 'Bullish Bias + 5m FVG Retrace',
+                        'confluences': [fvg]
+                    }
 
         elif bias == "bearish":
             if portfolio['position'] >= 0:
-                if is_fvg_bearish:
-                    # SL above i-1 High
-                    sl = candle_i_1['high']
+                if fvg:
+                    # SL above FVG top
+                    sl = fvg['top']
                     if sl <= price: sl = price * 1.005 # Fallback
                     tp = price - (sl - price) * 2 # 2R
-                    signal = {'action': 'sell', 'quantity': 1, 'sl': sl, 'tp': tp, 'reason': 'Bearish Bias + 5m FVG'}
+                    signal = {
+                        'action': 'sell',
+                        'quantity': 1,
+                        'sl': sl,
+                        'tp': tp,
+                        'reason': 'Bearish Bias + 5m FVG Retrace',
+                        'confluences': [fvg]
+                    }
 
         # Exit Logic (Bias Reversal)
         if portfolio['position'] > 0 and bias == "bearish":
