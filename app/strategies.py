@@ -304,14 +304,31 @@ class AITextStrategy(Strategy):
             # Try parsing JSON
             try:
                 signal = json.loads(text)
-                if isinstance(signal, dict) and 'action' in signal:
-                    if signal['action'] in ['buy', 'sell', 'close']:
+            except json.JSONDecodeError:
+                # Fallback: Try extracting JSON object via regex
+                import re
+                match = re.search(r'\{.*\}', text, re.DOTALL)
+                if match:
+                    try:
+                        signal = json.loads(match.group(0))
+                    except:
+                        signal = None
+                else:
+                    signal = None
+
+            if isinstance(signal, dict):
+                # Normalize keys and values
+                signal = {k.lower(): v for k, v in signal.items()}
+
+                if 'action' in signal and isinstance(signal['action'], str):
+                    signal['action'] = signal['action'].lower()
+
+                    if signal['action'] in ['buy', 'sell', 'close', 'hold']:
                         self.log(f"Signal: {signal}")
                         return signal
-                return None
-            except json.JSONDecodeError as e:
-                self.log(f"JSON Parse Error: {e}. Raw Text: {text}")
-                return None
+
+            self.log(f"Invalid Signal or JSON: {text}")
+            return None
 
         except Exception as e:
             self.last_error = str(e)

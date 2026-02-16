@@ -88,7 +88,7 @@ class Backtester:
 
                 if signal and not is_trading_hours:
                     # Filter ENTRY actions (buy/sell)
-                    action = signal.get('action')
+                    action = signal.get('action', '').lower()
                     if action in ['buy', 'sell']:
                         signal['action'] = 'hold'
                         signal['reason'] = f"Outside Trading Hours (09:30-16:30 NY). Ignored: {signal.get('reason', '')}"
@@ -156,7 +156,7 @@ class Backtester:
         """
         Executes a trade based on signal.
         """
-        action = signal.get('action')
+        action = signal.get('action', '').lower()
         quantity = signal.get('quantity', 1)
         ticker = signal.get('ticker', 'UNKNOWN')
 
