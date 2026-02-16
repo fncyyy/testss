@@ -186,7 +186,7 @@ class AITextStrategy(Strategy):
                 genai.configure(api_key=self.api_key)
                 generation_config = {
                     "response_mime_type": "application/json",
-                    "max_output_tokens": 250
+                    "max_output_tokens": 1000
                 }
                 self.model = genai.GenerativeModel(self.model_name, generation_config=generation_config)
             except Exception as e:
